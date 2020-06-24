@@ -1,0 +1,60 @@
+##count data
+setwd("/Users/emma/Desktop/GSE103967_RAW")
+##metadata
+metadata<-read.table("metadata.txt",sep="\t",quote="",stringsAsFactors=F,header=T)
+metadata2<-metadata[metadata$Experiment_ID=="thymus_stroma_WT",]
+metadata2<-metadata2[,2]
+metadata2<-unique(metadata2)
+
+setwd("/Users/emma/Desktop/GSE103967_RAW")
+file<-list.files(path="/Users/emma/Desktop/GSE103967_RAW")
+matchs<-paste(".*",metadata2,".txt",sep="")
+install.packages("stringr") 
+library(stringr)
+matchs1<-str_c(matchs,collapse="|",sep="")
+file1<-file[str_detect(file,pattern = matchs1)]
+
+g<-lapply(file1,function(x){read.table(x,sep="\t",quote="",stringsAsFactors=F)})
+
+f<-g[[1]]
+for (i in 2:(length(g))){
+  f<-cbind(f,g[[i]])
+}
+
+
+
+
+##seurat
+install.packages('Seurat')
+library(Seurat)
+seurat<-CreateSeuratObject(raw.data=f,project="",min.cells=3,min.genes=200)
+VlnPlot(object=seurat,features.plot=c("nGene","nUMI"),nCol=2)
+GenePlot(object=seurat,gene1="nUMI",gene2="nGene")
+seurat<-FilterCells(object=seurat,subset.names="nUMI",low.thresholds=-Inf,high.thresholds=11000)
+seurat<-NormalizeData(object=seurat,normalization.method="LogNormalize")
+cc<-read.table("181002_regev_lab_cell_cycle_genes.txt",sep="\t",stringsAsFactors=F)
+s<-as.character(cc[1:43,])
+g2m<-as.character(cc[44:97,])
+seurat<- CellCycleScoring(seurat, s.genes = s, g2m.genes = g2m, set.ident = TRUE)
+seurat<- ScaleData(seurat, vars.to.regress = c("S.Score", "G2M.Score"), display.progress = FALSE)
+seurat <- FindVariableGenes(seurat, do.plot =T, display.progress = FALSE)
+seurat <- RunPCA(seurat, pc.genes = seurat@var.genes, do.print = TRUE, pcs.print = 1:10, genes.print = 5)
+
+VizPCA(seurat,pcs.use=1:2)
+PCAPlot(seurat,dim.1=1,dim.2=2)
+seurat<-JackStraw(seurat,num.replicate=100,display.progress=F)
+JackStrawPlot(seurat,PCs=1:15)
+PCElbowPlot(seurat)
+
+
+seurat<-FindClusters(seurat,reduction.type="pca",dims.use=1:15,resolution=0.6,save.SNN=T)
+PrintFindClustersParams(seurat)
+
+
+seurat<-RunTSNE(seurat, reduction.use = "pca", dims.use = 1:15,dim.embed = 2, reduction.name = "tsne", perplexity=20)
+TSNEPlot(seurat)
+FeaturePlot(object=seurat,features.plot = c("Fezf2"),cols.use=c("grey","blue"))
+
+
+markersall <- FindAllMarkers(seurat, only.pos=T,min.pct=0.25,thresh.use=0.25)
+
